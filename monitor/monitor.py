@@ -37,6 +37,25 @@ def init_db():
           height INTEGER NOT NULL, idx INTEGER NOT NULL, ts TEXT NOT NULL,
           size INTEGER NOT NULL, kind TEXT NOT NULL, notable TEXT,
           PRIMARY KEY(height,idx));
+        CREATE TABLE IF NOT EXISTS node_history(
+          height INTEGER PRIMARY KEY,
+          ts TEXT NOT NULL,
+          bytes INTEGER NOT NULL DEFAULT 0,
+          tx_count INTEGER NOT NULL DEFAULT 0,
+          type0_count INTEGER NOT NULL DEFAULT 0,
+          type1_count INTEGER NOT NULL DEFAULT 0,
+          type2_count INTEGER NOT NULL DEFAULT 0,
+          type3_count INTEGER NOT NULL DEFAULT 0,
+          type4_count INTEGER NOT NULL DEFAULT 0,
+          type5_count INTEGER NOT NULL DEFAULT 0,
+          type0_bytes INTEGER NOT NULL DEFAULT 0,
+          type1_bytes INTEGER NOT NULL DEFAULT 0,
+          type2_bytes INTEGER NOT NULL DEFAULT 0,
+          type3_bytes INTEGER NOT NULL DEFAULT 0,
+          type4_bytes INTEGER NOT NULL DEFAULT 0,
+          type5_bytes INTEGER NOT NULL DEFAULT 0,
+          reward_count INTEGER NOT NULL DEFAULT 0,
+          reward_atomic INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY,v TEXT NOT NULL);
         ''')        
         # Migration: native Carmentis type 0..5
@@ -47,6 +66,21 @@ def init_db():
             c.execute('ALTER TABLE txs ADD COLUMN reward_atomic INTEGER')
         if 'reward_node' not in cols:
             c.execute('ALTER TABLE txs ADD COLUMN reward_node TEXT')
+        
+        # Persistent history migration
+        hcols={r['name'] for r in c.execute('PRAGMA table_info(node_history)')}
+        for name in (
+            'bytes','tx_count',
+            'type0_count','type1_count','type2_count',
+            'type3_count','type4_count','type5_count',
+            'type0_bytes','type1_bytes','type2_bytes',
+            'type3_bytes','type4_bytes','type5_bytes'
+        ):
+            if name not in hcols:
+                c.execute(
+                    f'ALTER TABLE node_history '
+                    f'ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0'
+                )
 
 def text_of(raw):
     return ' '.join(x.decode('ascii','ignore') for x in PRINTABLE.findall(raw))
@@ -113,6 +147,18 @@ def store_block(h):
     ts,nbytes,txs=block(h)
     counts={k:0 for k in ('reward','admin','commercial','other')}
     for _,_,k,_,_,_,_ in txs: counts[k]+=1
+    type_counts=[0]*6
+    type_bytes=[0]*6
+    node_reward_count=0
+    node_reward_atomic=0
+    for _,size,_,_,mb_type,reward_atomic,reward_node in txs:
+        if mb_type is not None:
+            type_counts[mb_type] += 1
+            type_bytes[mb_type] += size
+
+        if reward_node == '146B701625C7A621AF0E2C89CFD762D17C0C46087F0BDAF44D75F1BA928FD641':
+            node_reward_count += 1
+            node_reward_atomic += reward_atomic or 0
     # useful = everything not reward/admin. "other" is kept visible rather than silently called commercial.
     useful=counts['commercial']+counts['other']
     with conn() as c:
@@ -124,6 +170,22 @@ def store_block(h):
           VALUES(?,?,?,?,?,?,?,?,?)
         ''',
         [(h,i,ts,size,k,note,mb_type,reward_atomic,reward_node) for i,size,k,note,mb_type,reward_atomic,reward_node in txs])
+        c.execute('''
+         INSERT OR REPLACE INTO node_history(
+           height,ts,bytes,tx_count,
+           type0_count,type1_count,type2_count,
+           type3_count,type4_count,type5_count,
+           type0_bytes,type1_bytes,type2_bytes,
+           type3_bytes,type4_bytes,type5_bytes,
+           reward_count,reward_atomic
+         )
+         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       ''', (
+         h,ts,nbytes,len(txs),
+         *type_counts,
+         *type_bytes,
+         node_reward_count,node_reward_atomic
+       ))
         c.execute("INSERT OR REPLACE INTO meta VALUES('last_height',?)",(str(h),))
 
 def estimate_start(latest):
@@ -179,13 +241,31 @@ def stats():
             COALESCE(SUM(CASE WHEN mb_type=4 THEN 1 ELSE 0 END),0) type4,
             COALESCE(SUM(CASE WHEN mb_type=5 THEN 1 ELSE 0 END),0) type5
           FROM txs''').fetchone()
-        reward_atomic=c.execute('''
-          SELECT COALESCE(SUM(reward_atomic),0)
+        node_7d=c.execute('''
+          SELECT COUNT(*) AS rewards,
+                 COALESCE(SUM(reward_atomic),0) AS reward_atomic
           FROM txs
           WHERE reward_node=?
         ''', (
           '146B701625C7A621AF0E2C89CFD762D17C0C46087F0BDAF44D75F1BA928FD641',
-        )).fetchone()[0]
+        )).fetchone()
+        node_history=c.execute('''
+          SELECT
+            COUNT(*) AS blocks,
+            COALESCE(SUM(tx_count),0) AS tx,
+            COALESCE(SUM(type0_count),0) AS type0,
+            COALESCE(SUM(type1_count),0) AS type1,
+            COALESCE(SUM(type2_count),0) AS type2,
+            COALESCE(SUM(type3_count),0) AS type3,
+            COALESCE(SUM(type4_count),0) AS type4,
+            COALESCE(SUM(type5_count),0) AS type5,
+            COALESCE(SUM(reward_count),0) AS rewards,
+            COALESCE(SUM(reward_atomic),0) AS reward_atomic,
+            COALESCE(MAX(bytes),0) AS max_bytes_block,
+            MIN(ts) AS since,
+            MAX(ts) AS until
+          FROM node_history
+        ''').fetchone()
         # 5-minute buckets for empirical CDF / peak-load distribution.
         rows=c.execute('''SELECT CAST(strftime('%s',ts)/300 AS INTEGER) bucket,
           SUM(tx_count) tx, SUM(useful_count) useful, SUM(commercial_count) commercial, SUM(bytes) bytes
@@ -194,7 +274,25 @@ def stats():
     tx5=[r['tx'] for r in rows]; useful5=[r['useful'] for r in rows]; bytes5=[r['bytes'] for r in rows]
     d=dict(a)
     d['native_types']=dict(native)
-    d['reward_tokens']=reward_atomic / 100000 # atomic -> CMTS (TOKEN=100000, ATOMIC=1)
+    d['rewards']=node_7d['rewards']
+    d['reward_tokens']=node_7d['reward_atomic'] / 100000 # atomic -> CMTS (TOKEN=100000, ATOMIC=1)
+    d['node_history'] = {
+        'blocks': node_history['blocks'],
+        'tx': node_history['tx'],
+        'native_types': {
+            'type0': node_history['type0'],
+            'type1': node_history['type1'],
+            'type2': node_history['type2'],
+            'type3': node_history['type3'],
+            'type4': node_history['type4'],
+            'type5': node_history['type5'],
+        },
+        'rewards': node_history['rewards'],
+        'reward_tokens': node_history['reward_atomic'] / 100000,
+        'max_bytes_block': node_history['max_bytes_block'],
+        'since': node_history['since'],
+        'until': node_history['until'],
+    }
     d['cdf_5m']={
       'tx':{'p50':percentile(tx5,.50),'p90':percentile(tx5,.90),'p99':percentile(tx5,.99),'max':max(tx5,default=0)},
       'useful':{'p50':percentile(useful5,.50),'p90':percentile(useful5,.90),'p99':percentile(useful5,.99),'max':max(useful5,default=0)},
@@ -206,6 +304,10 @@ def stats():
         d['consensus_limits']={'max_bytes':int(bp.get('max_bytes','0')), 'max_gas':int(bp.get('max_gas','-1'))}
         mb=d['consensus_limits']['max_bytes']
         d['peak_vs_max_bytes_pct']=round(100*d['max_bytes_block']/mb,5) if mb>0 else None
+        d['node_history']['peak_vs_max_bytes_pct'] = (
+            round(100*node_history['max_bytes_block']/mb,5)
+            if mb>0 else None
+        )
     except Exception:
         d['consensus_limits']=None; d['peak_vs_max_bytes_pct']=None
     return d
@@ -252,6 +354,20 @@ def chart_data():
             GROUP BY bucket
             ORDER BY bucket
         """).fetchall()
+        native_history = c.execute("""
+           SELECT
+               CAST(strftime('%s', ts) / 3600 AS INTEGER) AS bucket,
+               COUNT(*) AS blocks,
+               COALESCE(SUM(type0_bytes),0) AS type0,
+               COALESCE(SUM(type1_bytes),0) AS type1,
+               COALESCE(SUM(type2_bytes),0) AS type2,
+               COALESCE(SUM(type3_bytes),0) AS type3,
+               COALESCE(SUM(type4_bytes),0) AS type4,
+               COALESCE(SUM(type5_bytes),0) AS type5
+           FROM node_history
+           GROUP BY bucket
+           ORDER BY bucket
+       """).fetchall()
     try:
         params = rpc('/consensus_params')
         max_bytes = int(
@@ -304,12 +420,25 @@ def chart_data():
            "type5": r["type5"],
            "max_theoretical": max_bytes * r["blocks"]
         })
+    native_history_activity = []
+    for r in native_history:
+        native_history_activity.append({
+            "ts": r["bucket"] * 3600,
+            "type0": r["type0"],
+            "type1": r["type1"],
+            "type2": r["type2"],
+            "type3": r["type3"],
+            "type4": r["type4"],
+            "type5": r["type5"],
+            "max_theoretical": max_bytes * r["blocks"]
+        })
     return {
         "window_days": KEEP_DAYS,
         "max_bytes": max_bytes,
         "activity": activity,
         "cdf": cdf,
-        "native_activity": native_activity
+        "native_activity": native_activity,
+        "native_history_activity": native_history_activity
     }
 
 class Handler(BaseHTTPRequestHandler):
