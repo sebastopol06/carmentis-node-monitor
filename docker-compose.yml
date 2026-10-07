@@ -1,0 +1,80 @@
+networks:
+  carmentis-network:
+    driver: bridge
+
+volumes:
+  caddy_data: {}
+  caddy_config: {}
+  monitor_data: {}
+
+services:
+
+  caddy:
+    image: caddy:2
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./dashboard:/srv/dashboard:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - carmentis-network
+    depends_on:
+      - node-cometbft
+      - node-abci
+      - monitor
+
+  monitor:
+    build:
+      context: ./monitor
+    container_name: carmentis-monitor
+    restart: unless-stopped
+    environment:
+      COMET_RPC: http://node-cometbft:26657
+      DB_PATH: /data/carmentis.db
+      DAYS_TO_KEEP: "7"
+      PORT: "8080"
+    volumes:
+      - monitor_data:/data
+    networks:
+      - carmentis-network
+    depends_on:
+      - node-cometbft
+
+  node-abci:
+    container_name: node-abci
+    image: ghcr.io/carmentis/node/abci:mainnet
+    expose:
+      - "26658"
+    volumes:
+      - ./cometbft:/cometbft
+      - ./abci:/abci
+      - ./config.toml:/app/config.toml
+    networks:
+      - carmentis-network
+
+  node-cometbft:
+    container_name: node-cometbft
+    image: cometbft/cometbft:v0.38.x
+    command:
+      - start
+      - --abci
+      - grpc
+      - --proxy_app
+      - node-abci:26658
+      - --rpc.laddr
+      - tcp://0.0.0.0:26657
+    depends_on:
+      - node-abci
+    ports:
+      - 26656:26656
+      - 26657:26657
+    user: 1000:1000
+    volumes:
+      - ./cometbft:/cometbft
+    networks:
+      - carmentis-network

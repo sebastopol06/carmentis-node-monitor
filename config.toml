@@ -1,0 +1,54 @@
+[genesis_snapshot]
+rpc_endpoint = "https://evandre.carmentis.io"
+
+[snapshots]
+snapshot_block_period = 10_000
+block_history_before_snapshot = 0
+max_snapshots = 2
+max_snapshot_chunk_size = 2_097_152
+
+[cometbft]
+exposed_rpc_endpoint = "https://carmentis-node-sba.fr"
+
+[abci]
+min_microblock_gas_price_in_atomics = 100
+max_microblocks_per_block = 50
+
+  [abci.grpc]
+  port = 26_658
+
+[paths]
+cometbft_home = "/cometbft"
+storage = "/abci"
+storage_relative_snapshots_folder = "snapshots"
+storage_relative_db_folder = "db"
+storage_relative_microblocks_folder = "microblocks"
+storage_relative_genesis_snapshot_file = "genesis_snapshot.json"
+
+[logs.sinks.console]
+type = "console"
+
+[[logs.loggers]]
+category = [ "node" ]
+lowestLevel = "info"
+sinks = [ "console" ]
+
+[[logs.loggers]]
+category = [ "node", "abci", "checkTx" ]
+lowestLevel = "error"
+sinks = [ "console" ]
+
+[[logs.loggers]]
+category = [ "node", "state", "GlobalStateUpdater" ]
+lowestLevel = "error"
+sinks = [ "console" ]
+
+[[logs.loggers]]
+category = [ "node", "accounts", "token" ]
+lowestLevel = "error"
+sinks = [ "console" ]
+
+[[logs.loggers]]
+category = [ "node", "early-rejection" ]
+lowestLevel = "error"
+sinks = [ "console" ]

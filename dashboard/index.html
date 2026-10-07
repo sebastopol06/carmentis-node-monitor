@@ -1,0 +1,843 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Carmentis Mainnet Monitor</title>
+
+<style>
+:root {
+    --bg:#0b0f14;
+    --panel:#121820;
+    --panel2:#161e28;
+    --border:#26313d;
+    --text:#e7edf4;
+    --muted:#8c9aaa;
+    --green:#54d18b;
+    --blue:#62a8ff;
+    --orange:#f0a45d;
+    --purple:#bb8cff;
+    --red:#ff7070;
+    --grid:#25303a;
+}
+
+* { box-sizing:border-box; }
+
+body {
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:
+        Inter, ui-sans-serif, system-ui, -apple-system,
+        BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+main {
+    max-width:1400px;
+    margin:auto;
+    padding:28px;
+}
+
+header {
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:20px;
+    margin-bottom:24px;
+}
+
+h1 {
+    margin:0;
+    font-size:27px;
+    font-weight:650;
+}
+
+.subtitle {
+    color:var(--muted);
+    margin-top:6px;
+    font-size:14px;
+}
+
+.status {
+    display:flex;
+    align-items:center;
+    gap:8px;
+    color:var(--muted);
+    font-size:13px;
+}
+
+.dot {
+    width:9px;
+    height:9px;
+    border-radius:50%;
+    background:var(--orange);
+}
+
+.dot.ok {
+    background:var(--green);
+    box-shadow:0 0 10px #54d18b66;
+}
+
+.grid {
+    display:grid;
+    grid-template-columns:repeat(6,1fr);
+    gap:12px;
+    margin-bottom:18px;
+}
+
+.card {
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:17px;
+}
+
+.label {
+    color:var(--muted);
+    text-transform:uppercase;
+    font-size:11px;
+    letter-spacing:.08em;
+}
+
+.value {
+    font-size:26px;
+    margin-top:7px;
+    font-weight:620;
+}
+
+.small {
+    color:var(--muted);
+    font-size:12px;
+    margin-top:5px;
+}
+
+.green { color:var(--green); }
+.blue { color:var(--blue); }
+.orange { color:var(--orange); }
+.purple { color:var(--purple); }
+
+.section {
+    margin-top:20px;
+}
+
+.section-title {
+    font-size:16px;
+    font-weight:600;
+    margin:0 0 11px;
+}
+
+.charts {
+    display:grid;
+    grid-template-columns:2fr 1fr;
+    gap:14px;
+}
+
+.chart-card {
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:18px;
+    min-width:0;
+}
+
+.chart-header {
+    display:flex;
+    justify-content:space-between;
+    gap:15px;
+    align-items:flex-start;
+    margin-bottom:10px;
+}
+
+.chart-title {
+    font-weight:600;
+    font-size:14px;
+}
+
+.chart-desc {
+    color:var(--muted);
+    font-size:12px;
+    margin-top:3px;
+}
+
+.legend {
+    display:flex;
+    flex-wrap:wrap;
+    gap:13px;
+    color:var(--muted);
+    font-size:11px;
+}
+
+.legend span::before {
+    content:"";
+    display:inline-block;
+    width:8px;
+    height:8px;
+    border-radius:2px;
+    margin-right:5px;
+}
+
+.legend .rewards::before { background:var(--blue); }
+.legend .commercial::before { background:var(--green); }
+.legend .other::before { background:var(--orange); }
+
+svg {
+    width:100%;
+    height:300px;
+    display:block;
+    overflow:visible;
+}
+
+.axis {
+    fill:var(--muted);
+    font-size:10px;
+}
+
+.gridline {
+    stroke:var(--grid);
+    stroke-width:1;
+}
+
+.table {
+    width:100%;
+    border-collapse:collapse;
+    margin-top:4px;
+}
+
+.table td {
+    border-bottom:1px solid var(--border);
+    padding:11px 4px;
+    font-size:13px;
+}
+
+.table td:last-child {
+    text-align:right;
+    font-variant-numeric:tabular-nums;
+}
+
+.table tr:last-child td {
+    border-bottom:none;
+}
+
+.note {
+    color:var(--muted);
+    font-size:12px;
+    line-height:1.55;
+    margin-top:12px;
+}
+
+footer {
+    color:var(--muted);
+    font-size:11px;
+    margin-top:22px;
+    text-align:center;
+}
+
+@media(max-width:1000px) {
+    .grid { grid-template-columns:repeat(3,1fr); }
+    .charts { grid-template-columns:1fr; }
+}
+
+@media(max-width:600px) {
+    main { padding:15px; }
+    header { flex-direction:column; }
+    .grid { grid-template-columns:repeat(2,1fr); }
+}
+</style>
+</head>
+
+<body>
+
+<main>
+
+<header>
+    <div>
+        <h1>Carmentis Mainnet Monitor</h1>
+        <div class="subtitle">
+            Mainnet activity observed by node <b>seba</b> · rolling 7-day window
+        </div>
+    </div>
+
+    <div class="status">
+        <span id="dot" class="dot"></span>
+        <span id="status">Connecting…</span>
+    </div>
+</header>
+
+
+<div class="grid">
+
+    <div class="card">
+        <div class="label">Blocks observed</div>
+        <div class="value" id="blocks">—</div>
+        <div class="small" id="history">rolling history</div>
+    </div>
+
+    <div class="card">
+        <div class="label">Transactions</div>
+        <div class="value" id="tx">—</div>
+        <div class="small">all observed transactions</div>
+    </div>
+
+    <div class="card">
+        <div class="label">Rewards</div>
+        <div class="value blue" id="rewards">—</div>
+        <div class="small" id="rewardPct">—</div>
+    </div>
+
+    <div class="card">
+        <div class="label">Commercial</div>
+        <div class="value green" id="commercial">—</div>
+        <div class="small">conservative classifier</div>
+    </div>
+
+    <div class="card">
+        <div class="label">Other useful</div>
+        <div class="value orange" id="useful">—</div>
+        <div class="small">non-reward activity</div>
+    </div>
+
+    <div class="card">
+        <div class="label">Peak capacity</div>
+        <div class="value purple" id="peakCapacity">—</div>
+        <div class="small">peak tx payload / max block</div>
+    </div>
+
+</div>
+
+
+<div class="section">
+
+    <div class="section-title">Activity · rolling 7 days</div>
+
+    <div class="chart-card">
+
+        <div class="chart-header">
+            <div>
+                <div class="chart-title">Transactions by type</div>
+                <div class="chart-desc">
+                    Hourly transaction count
+                </div>
+            </div>
+
+            <div class="legend">
+                <span class="rewards">Rewards</span>
+                <span class="commercial">Commercial</span>
+                <span class="other">Other useful</span>
+            </div>
+        </div>
+
+        <svg id="activityChart"></svg>
+
+    </div>
+
+</div>
+
+<!-- Native Carmentis activity -->
+<div class="section">
+    <div class="chart-card">
+
+        <div class="chart-header">
+            <div>
+                <div class="chart-title">Native activity vs network capacity</div>
+                <div class="chart-desc">
+                    Hourly transaction payload · rolling 7 days
+                </div>
+            </div>
+
+            <div class="legend">
+                <span style="color:#62a8ff">● Protocol (0)</span>
+                <span style="color:#54d18b">● Account (1)</span>
+                <span style="color:#f0a45d">● Validator node (2)</span>
+                <span style="color:#bb8cff">● Organization (3)</span>
+                <span style="color:#ff7070">● Application (4)</span>
+                <span style="color:#e7edf4">● Application ledger (5)</span>
+            </div>
+        </div>
+
+        <svg id="nativeChart"></svg>
+
+        <div class="note">
+            Y = native Carmentis transaction payload (bytes/hour).
+            The theoretical network maximum is shown for reference.
+        </div>
+
+    </div>
+</div>
+
+<footer>
+    Data refreshed every 20 seconds · Carmentis mainnet ·
+    Classification is experimental
+</footer>
+
+</main>
+
+
+<script>
+
+const NS = "http://www.w3.org/2000/svg";
+
+const COLORS = {
+    rewards:"#62a8ff",
+    commercial:"#54d18b",
+    other:"#f0a45d",
+    purple:"#bb8cff",
+    grid:"#25303a",
+    muted:"#8c9aaa"
+};
+
+function fmt(n) {
+    return Number(n || 0).toLocaleString();
+}
+
+function svgEl(name, attrs={}) {
+    const e=document.createElementNS(NS,name);
+
+    for(const [k,v] of Object.entries(attrs))
+        e.setAttribute(k,v);
+
+    return e;
+}
+
+function text(svg,x,y,value,anchor="start") {
+
+    const t=svgEl("text",{
+        x,y,
+        "text-anchor":anchor,
+        class:"axis"
+    });
+
+    t.textContent=value;
+    svg.appendChild(t);
+}
+
+function clear(svg) {
+    while(svg.firstChild)
+        svg.removeChild(svg.firstChild);
+}
+
+
+function drawActivity(data) {
+
+    const svg=document.getElementById("activityChart");
+    clear(svg);
+
+    const W=1000;
+    const H=300;
+
+    const m={l:45,r:15,t:15,b:35};
+
+    svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
+
+    if(!data.length)
+        return;
+
+    const max=Math.max(
+        1,
+        ...data.map(d =>
+            Number(d.rewards)+
+            Number(d.commercial)+
+            Number(d.other)
+        )
+    );
+
+    const plotW=W-m.l-m.r;
+    const plotH=H-m.t-m.b;
+
+    for(let i=0;i<=4;i++) {
+
+        const y=m.t + plotH*i/4;
+
+        svg.appendChild(svgEl("line",{
+            x1:m.l,
+            y1:y,
+            x2:W-m.r,
+            y2:y,
+            class:"gridline"
+        }));
+
+        text(
+            svg,
+            m.l-7,
+            y+3,
+            Math.round(max*(1-i/4)),
+            "end"
+        );
+    }
+
+    const bw=plotW/data.length;
+
+    data.forEach((d,i)=>{
+
+        const x=m.l+i*bw;
+
+        let y=H-m.b;
+
+        const values=[
+            ["rewards",Number(d.rewards)],
+            ["commercial",Number(d.commercial)],
+            ["other",Number(d.other)]
+        ];
+
+        values.forEach(([type,value])=>{
+
+            if(!value)
+                return;
+
+            const h=value/max*plotH;
+
+            y-=h;
+
+            svg.appendChild(svgEl("rect",{
+                x:x+0.5,
+                y,
+                width:Math.max(.5,bw-1),
+                height:h,
+                fill:COLORS[type]
+            }));
+        });
+    });
+
+
+    const ticks=6;
+
+    for(let i=0;i<ticks;i++) {
+
+        const idx=Math.round(
+            i*(data.length-1)/(ticks-1)
+        );
+
+        const d=new Date(data[idx].hour);
+
+        const label=
+            d.toLocaleDateString(undefined,{
+                month:"short",
+                day:"numeric"
+            }) +
+            " " +
+            d.toLocaleTimeString(undefined,{
+                hour:"2-digit",
+                minute:"2-digit"
+            });
+
+        const x=m.l+idx*bw;
+
+        text(svg,x,H-10,label,"middle");
+    }
+}
+
+function drawNative(data) {
+    const svg=document.getElementById("nativeChart");
+    clear(svg);
+
+    const W=1000, H=300;
+    const m={l:70,r:20,t:15,b:35};
+    svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
+
+    if(!data.length) return;
+
+    const plotW=W-m.l-m.r;
+    const plotH=H-m.t-m.b;
+
+    const observedMax=Math.max(
+        1,
+        ...data.flatMap(d=>[
+            d.type0,d.type1,d.type2,
+            d.type3,d.type4,d.type5
+        ].map(Number))
+    );
+
+    /* Scale on observed activity: theoretical maximum is far above it. */
+    const ymax=observedMax*1.10;
+
+    for(let i=0;i<=4;i++) {
+        const y=m.t+plotH*i/4;
+
+        svg.appendChild(svgEl("line",{
+            x1:m.l,y1:y,x2:W-m.r,y2:y,
+            class:"gridline"
+        }));
+
+        text(svg,m.l-7,y+3,
+            fmt(Math.round(ymax*(1-i/4))),
+            "end");
+    }
+
+    const series=[
+        ["type0","#62a8ff"],
+        ["type1","#54d18b"],
+        ["type2","#f0a45d"],
+        ["type3","#bb8cff"],
+        ["type4","#ff7070"],
+        ["type5","#e7edf4"]
+    ];
+
+    for(const [key,color] of series) {
+        let path="";
+
+        data.forEach((d,i)=>{
+            const x=m.l+i/(data.length-1)*plotW;
+            const y=m.t+(1-Number(d[key])/ymax)*plotH;
+            path+=(i ? "L":"M")+x+" "+y+" ";
+        });
+
+        svg.appendChild(svgEl("path",{
+            d:path,
+            fill:"none",
+            stroke:color,
+            "stroke-width":"2"
+        }));
+    }
+
+    for(let i=0;i<6;i++) {
+        const idx=Math.round(i*(data.length-1)/5);
+        const d=new Date(data[idx].ts*1000);
+
+        const label=
+            d.toLocaleDateString(undefined,{
+                month:"short",day:"numeric"
+            })+" "+
+            d.toLocaleTimeString(undefined,{
+                hour:"2-digit",minute:"2-digit"
+            });
+
+        const x=m.l+idx/(data.length-1)*plotW;
+        text(svg,x,H-10,label,"middle");
+    }
+
+    text(svg,W-m.r,m.t+12,
+         "Theoretical max: "+fmt(data[0].max_theoretical)+" bytes/hour",
+         "end");
+}
+
+function drawCDF(data) {
+
+    const svg=document.getElementById("cdfChart");
+    clear(svg);
+
+    const W=700;
+    const H=300;
+
+    const m={l:48,r:20,t:15,b:38};
+
+    svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
+
+    if(!data.length)
+        return;
+
+    /*
+       Current network utilization is extremely low.
+
+       Use the observed maximum as the right side of the graph,
+       with a little headroom. The absolute protocol maximum
+       remains displayed separately in the capacity table.
+    */
+
+    const observedMax=Math.max(
+        ...data.map(d=>Number(d.capacity_pct))
+    );
+
+    const xmax=Math.max(
+        observedMax*1.08,
+        0.000001
+    );
+
+    const plotW=W-m.l-m.r;
+    const plotH=H-m.t-m.b;
+
+
+    for(let i=0;i<=4;i++) {
+
+        const y=m.t+plotH*i/4;
+
+        svg.appendChild(svgEl("line",{
+            x1:m.l,
+            y1:y,
+            x2:W-m.r,
+            y2:y,
+            class:"gridline"
+        }));
+
+        text(
+            svg,
+            m.l-7,
+            y+3,
+            (100*(1-i/4)).toFixed(0)+"%",
+            "end"
+        );
+    }
+
+
+    for(let i=0;i<=4;i++) {
+
+        const x=m.l+plotW*i/4;
+
+        svg.appendChild(svgEl("line",{
+            x1:x,
+            y1:m.t,
+            x2:x,
+            y2:H-m.b,
+            class:"gridline"
+        }));
+
+        text(
+            svg,
+            x,
+            H-11,
+            (xmax*i/4).toFixed(4)+"%",
+            "middle"
+        );
+    }
+
+
+    let path="";
+
+    data.forEach((d,i)=>{
+
+        const x=
+            m.l+
+            Number(d.capacity_pct)/xmax*plotW;
+
+        const y=
+            m.t+
+            (1-Number(d.percentile)/100)*plotH;
+
+        path+=(i?"L":"M")+x+" "+y+" ";
+    });
+
+
+    svg.appendChild(svgEl("path",{
+        d:path,
+        fill:"none",
+        stroke:COLORS.purple,
+        "stroke-width":"2.5"
+    }));
+
+
+    /*
+       Protocol maximum marker:
+       cannot be represented at scale because observed activity
+       is ~orders of magnitude smaller.
+    */
+
+    text(
+        svg,
+        W-m.r,
+        m.t+12,
+        "Observed range (protocol max = 100%)",
+        "end"
+    );
+}
+
+
+async function update() {
+
+    try {
+
+        const [statsR,chartsR,statusR] =
+            await Promise.all([
+                fetch("/dashboard/api/stats"),
+                fetch("/dashboard/api/charts"),
+                fetch("/status")
+            ]);
+
+        if(!statsR.ok || !chartsR.ok)
+            throw new Error("monitor API unavailable");
+
+        const stats=await statsR.json();
+        const charts=await chartsR.json();
+
+        let nodeStatus=null;
+
+        if(statusR.ok)
+            nodeStatus=await statusR.json();
+
+
+        document.getElementById("blocks").textContent=
+            fmt(stats.blocks);
+
+        document.getElementById("tx").textContent=
+            fmt(stats.tx);
+
+        document.getElementById("rewards").textContent=
+            fmt(stats.rewards);
+
+        document.getElementById("commercial").textContent=
+            fmt(stats.commercial);
+
+        document.getElementById("useful").textContent=
+            fmt(stats.useful);
+
+
+        const rewardPct=
+            stats.tx ?
+            100*stats.rewards/stats.tx :
+            0;
+
+        document.getElementById("rewardPct").textContent=
+            rewardPct.toFixed(2)+"% of transactions";
+
+
+        document.getElementById("peakCapacity").textContent=
+            Number(stats.peak_vs_max_bytes_pct || 0)
+                .toFixed(4)+"%";
+
+        if(stats.since && stats.until) {
+
+            const since=new Date(stats.since);
+            const until=new Date(stats.until);
+
+            const hours=
+                (until-since)/3600000;
+
+            const days=hours/24;
+
+            document.getElementById("history").textContent=
+                days.toFixed(1)+" days observed";
+        }
+
+
+        drawActivity(charts.activity || []);
+        drawNative(charts.native_activity || []);
+
+
+        const dot=document.getElementById("dot");
+        const status=document.getElementById("status");
+
+        if(nodeStatus &&
+           nodeStatus.result &&
+           nodeStatus.result.sync_info) {
+
+            const s=nodeStatus.result.sync_info;
+
+            dot.classList.add("ok");
+
+            status.textContent=
+                "Online · block "+
+                fmt(s.latest_block_height);
+        }
+        else {
+            dot.classList.add("ok");
+            status.textContent="Monitor online";
+        }
+
+    }
+    catch(e) {
+
+        document.getElementById("status").textContent=
+            "Connection error";
+
+        document.getElementById("dot")
+            .classList.remove("ok");
+
+        console.error(e);
+    }
+}
+
+
+update();
+setInterval(update,20000);
+
+</script>
+
+</body>
+</html>

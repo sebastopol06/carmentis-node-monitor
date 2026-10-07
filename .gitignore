@@ -1,0 +1,18 @@
+# Carmentis runtime / blockchain data
+abci/
+cometbft/
+
+# Monitor persistent data
+*.db
+*.db-shm
+*.db-wal
+
+# Secrets / environment
+.env
+*.key
+*.pem
+
+# Editor / OS
+.vscode/
+.DS_Store
+*~

@@ -1,0 +1,15 @@
+carmentis-node-sba.fr {
+
+    handle_path /dashboard/api/* {
+        reverse_proxy carmentis-monitor:8080
+    }
+
+    handle /dashboard* {
+        root * /srv
+        file_server
+    }
+
+    handle {
+        reverse_proxy node-cometbft:26657
+    }
+}
