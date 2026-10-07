@@ -80,7 +80,7 @@ h1 {
 
 .grid {
     display:grid;
-    grid-template-columns:repeat(6,1fr);
+    grid-template-columns:1fr 2.2fr 1fr 1fr 1fr;
     gap:12px;
     margin-bottom:18px;
 }
@@ -109,6 +109,29 @@ h1 {
     color:var(--muted);
     font-size:12px;
     margin-top:5px;
+}
+
+.tx-types {
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:4px 18px;
+    margin-top:10px;
+    font-size:11px;
+}
+
+.tx-types div {
+    display:flex;
+    justify-content:space-between;
+    gap:10px;
+}
+
+.tx-types span {
+    color:var(--muted);
+}
+
+.tx-types b {
+    font-weight:600;
+    font-variant-numeric:tabular-nums;
 }
 
 .green { color:var(--green); }
@@ -234,6 +257,7 @@ footer {
 
 @media(max-width:1000px) {
     .grid { grid-template-columns:repeat(3,1fr); }
+    .tx-card { grid-column:span 2; }
     .charts { grid-template-columns:1fr; }
 }
 
@@ -241,6 +265,7 @@ footer {
     main { padding:15px; }
     header { flex-direction:column; }
     .grid { grid-template-columns:repeat(2,1fr); }
+    .tx-card { grid-column:span 2; }
 }
 </style>
 </head>
@@ -272,10 +297,17 @@ footer {
         <div class="small" id="history">rolling history</div>
     </div>
 
-    <div class="card">
+    <div class="card tx-card">
         <div class="label">Transactions</div>
         <div class="value" id="tx">—</div>
-        <div class="small">all observed transactions</div>
+        <div class="tx-types">
+            <div><span>0 · Protocol</span><b id="type0">—</b></div>
+            <div><span>3 · Organization</span><b id="type3">—</b></div>
+            <div><span>1 · Account</span><b id="type1">—</b></div>
+            <div><span>4 · Application</span><b id="type4">—</b></div>
+            <div><span>2 · Validator</span><b id="type2">—</b></div>
+            <div><span>5 · App ledger</span><b id="type5">—</b></div>
+        </div>
     </div>
 
     <div class="card">
@@ -285,49 +317,15 @@ footer {
     </div>
 
     <div class="card">
-        <div class="label">Commercial</div>
-        <div class="value green" id="commercial">—</div>
-        <div class="small">conservative classifier</div>
-    </div>
-
-    <div class="card">
-        <div class="label">Other useful</div>
-        <div class="value orange" id="useful">—</div>
-        <div class="small">non-reward activity</div>
+        <div class="label">Reward tokens</div>
+        <div class="value blue" id="rewardTokens">—</div>
+        <div class="small">CMTS · rolling 7 days</div>
     </div>
 
     <div class="card">
         <div class="label">Peak capacity</div>
         <div class="value purple" id="peakCapacity">—</div>
         <div class="small">peak tx payload / max block</div>
-    </div>
-
-</div>
-
-
-<div class="section">
-
-    <div class="section-title">Activity · rolling 7 days</div>
-
-    <div class="chart-card">
-
-        <div class="chart-header">
-            <div>
-                <div class="chart-title">Transactions by type</div>
-                <div class="chart-desc">
-                    Hourly transaction count
-                </div>
-            </div>
-
-            <div class="legend">
-                <span class="rewards">Rewards</span>
-                <span class="commercial">Commercial</span>
-                <span class="other">Other useful</span>
-            </div>
-        </div>
-
-        <svg id="activityChart"></svg>
-
     </div>
 
 </div>
@@ -413,116 +411,6 @@ function text(svg,x,y,value,anchor="start") {
 function clear(svg) {
     while(svg.firstChild)
         svg.removeChild(svg.firstChild);
-}
-
-
-function drawActivity(data) {
-
-    const svg=document.getElementById("activityChart");
-    clear(svg);
-
-    const W=1000;
-    const H=300;
-
-    const m={l:45,r:15,t:15,b:35};
-
-    svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
-
-    if(!data.length)
-        return;
-
-    const max=Math.max(
-        1,
-        ...data.map(d =>
-            Number(d.rewards)+
-            Number(d.commercial)+
-            Number(d.other)
-        )
-    );
-
-    const plotW=W-m.l-m.r;
-    const plotH=H-m.t-m.b;
-
-    for(let i=0;i<=4;i++) {
-
-        const y=m.t + plotH*i/4;
-
-        svg.appendChild(svgEl("line",{
-            x1:m.l,
-            y1:y,
-            x2:W-m.r,
-            y2:y,
-            class:"gridline"
-        }));
-
-        text(
-            svg,
-            m.l-7,
-            y+3,
-            Math.round(max*(1-i/4)),
-            "end"
-        );
-    }
-
-    const bw=plotW/data.length;
-
-    data.forEach((d,i)=>{
-
-        const x=m.l+i*bw;
-
-        let y=H-m.b;
-
-        const values=[
-            ["rewards",Number(d.rewards)],
-            ["commercial",Number(d.commercial)],
-            ["other",Number(d.other)]
-        ];
-
-        values.forEach(([type,value])=>{
-
-            if(!value)
-                return;
-
-            const h=value/max*plotH;
-
-            y-=h;
-
-            svg.appendChild(svgEl("rect",{
-                x:x+0.5,
-                y,
-                width:Math.max(.5,bw-1),
-                height:h,
-                fill:COLORS[type]
-            }));
-        });
-    });
-
-
-    const ticks=6;
-
-    for(let i=0;i<ticks;i++) {
-
-        const idx=Math.round(
-            i*(data.length-1)/(ticks-1)
-        );
-
-        const d=new Date(data[idx].hour);
-
-        const label=
-            d.toLocaleDateString(undefined,{
-                month:"short",
-                day:"numeric"
-            }) +
-            " " +
-            d.toLocaleTimeString(undefined,{
-                hour:"2-digit",
-                minute:"2-digit"
-            });
-
-        const x=m.l+idx*bw;
-
-        text(svg,x,H-10,label,"middle");
-    }
 }
 
 function drawNative(data) {
@@ -758,15 +646,19 @@ async function update() {
         document.getElementById("tx").textContent=
             fmt(stats.tx);
 
+       for(let i=0;i<=5;i++) {
+           document.getElementById("type"+i).textContent=
+               fmt(stats.native_types?.["type"+i] || 0);
+       }
+
         document.getElementById("rewards").textContent=
             fmt(stats.rewards);
 
-        document.getElementById("commercial").textContent=
-            fmt(stats.commercial);
-
-        document.getElementById("useful").textContent=
-            fmt(stats.useful);
-
+        document.getElementById("rewardTokens").textContent =
+            Number(stats.reward_tokens).toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
 
         const rewardPct=
             stats.tx ?
@@ -796,7 +688,6 @@ async function update() {
         }
 
 
-        drawActivity(charts.activity || []);
         drawNative(charts.native_activity || []);
 
 

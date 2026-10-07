@@ -43,6 +43,10 @@ def init_db():
         cols={r['name'] for r in c.execute('PRAGMA table_info(txs)')}
         if 'mb_type' not in cols:
             c.execute('ALTER TABLE txs ADD COLUMN mb_type INTEGER')
+        if 'reward_atomic' not in cols:
+            c.execute('ALTER TABLE txs ADD COLUMN reward_atomic INTEGER')
+        if 'reward_node' not in cols:
+            c.execute('ALTER TABLE txs ADD COLUMN reward_node TEXT')
 
 def text_of(raw):
     return ' '.join(x.decode('ascii','ignore') for x in PRINTABLE.findall(raw))
@@ -55,6 +59,19 @@ def microblock_type(raw):
         return t if 0 <= t <= 5 else None
     except Exception:
         return None
+
+def reward_info(raw):
+    """Return (amount_atomic, node_id) for a reward, or (None, None)."""
+    try:
+        obj = cbor2.loads(raw)
+        for section in obj.get('body', {}).get('sections', []):
+            ref = str(section.get('publicReference', '')).lower()
+            if ('carmentis incentive program' in ref and
+                    'reward payment' in ref):
+                return int(section['amount']), ref.rsplit(' ', 1)[-1].upper()
+    except Exception:
+        pass
+    return None, None
 
 def classify(raw):
     s=text_of(raw)
@@ -86,20 +103,27 @@ def block(height):
         total_bytes += len(raw)
         kind,note=classify(raw)
         mb_type=microblock_type(raw)
-        decoded.append((i,len(raw),kind,note,mb_type))
+        reward_atomic,reward_node = (
+            reward_info(raw) if kind == 'reward' else (None,None)
+        )
+        decoded.append((i,len(raw),kind,note,mb_type,reward_atomic,reward_node))
     return ts,total_bytes,decoded
 
 def store_block(h):
     ts,nbytes,txs=block(h)
     counts={k:0 for k in ('reward','admin','commercial','other')}
-    for _,_,k,_,_ in txs: counts[k]+=1
+    for _,_,k,_,_,_,_ in txs: counts[k]+=1
     # useful = everything not reward/admin. "other" is kept visible rather than silently called commercial.
     useful=counts['commercial']+counts['other']
     with conn() as c:
         c.execute('INSERT OR IGNORE INTO blocks VALUES(?,?,?,?,?,?,?,?)',
           (h,ts,nbytes,len(txs),useful,counts['commercial'],counts['reward'],counts['other']))
-        c.executemany('INSERT OR IGNORE INTO txs(height,idx,ts,size,kind,notable,mb_type) VALUES(?,?,?,?,?,?,?)',
-          [(h,i,ts,size,k,note,mb_type) for i,size,k,note,mb_type in txs])
+        c.executemany('''
+          INSERT OR IGNORE INTO txs
+          (height,idx,ts,size,kind,notable,mb_type,reward_atomic,reward_node)
+          VALUES(?,?,?,?,?,?,?,?,?)
+        ''',
+        [(h,i,ts,size,k,note,mb_type,reward_atomic,reward_node) for i,size,k,note,mb_type,reward_atomic,reward_node in txs])
         c.execute("INSERT OR REPLACE INTO meta VALUES('last_height',?)",(str(h),))
 
 def estimate_start(latest):
@@ -146,6 +170,22 @@ def stats():
           COALESCE(SUM(bytes),0) bytes, MIN(ts) since, MAX(ts) until,
           COALESCE(MAX(tx_count),0) max_tx_block, COALESCE(MAX(bytes),0) max_bytes_block
           FROM blocks''').fetchone()
+        native=c.execute('''
+          SELECT
+            COALESCE(SUM(CASE WHEN mb_type=0 THEN 1 ELSE 0 END),0) type0,
+            COALESCE(SUM(CASE WHEN mb_type=1 THEN 1 ELSE 0 END),0) type1,
+            COALESCE(SUM(CASE WHEN mb_type=2 THEN 1 ELSE 0 END),0) type2,
+            COALESCE(SUM(CASE WHEN mb_type=3 THEN 1 ELSE 0 END),0) type3,
+            COALESCE(SUM(CASE WHEN mb_type=4 THEN 1 ELSE 0 END),0) type4,
+            COALESCE(SUM(CASE WHEN mb_type=5 THEN 1 ELSE 0 END),0) type5
+          FROM txs''').fetchone()
+        reward_atomic=c.execute('''
+          SELECT COALESCE(SUM(reward_atomic),0)
+          FROM txs
+          WHERE reward_node=?
+        ''', (
+          '146B701625C7A621AF0E2C89CFD762D17C0C46087F0BDAF44D75F1BA928FD641',
+        )).fetchone()[0]
         # 5-minute buckets for empirical CDF / peak-load distribution.
         rows=c.execute('''SELECT CAST(strftime('%s',ts)/300 AS INTEGER) bucket,
           SUM(tx_count) tx, SUM(useful_count) useful, SUM(commercial_count) commercial, SUM(bytes) bytes
@@ -153,6 +193,8 @@ def stats():
         notable=c.execute("SELECT kind,notable,COUNT(*) n FROM txs WHERE kind NOT IN ('reward','admin') GROUP BY kind,notable ORDER BY n DESC LIMIT 20").fetchall()
     tx5=[r['tx'] for r in rows]; useful5=[r['useful'] for r in rows]; bytes5=[r['bytes'] for r in rows]
     d=dict(a)
+    d['native_types']=dict(native)
+    d['reward_tokens']=reward_atomic / 100000 # atomic -> CMTS (TOKEN=100000, ATOMIC=1)
     d['cdf_5m']={
       'tx':{'p50':percentile(tx5,.50),'p90':percentile(tx5,.90),'p99':percentile(tx5,.99),'max':max(tx5,default=0)},
       'useful':{'p50':percentile(useful5,.50),'p90':percentile(useful5,.90),'p99':percentile(useful5,.99),'max':max(useful5,default=0)},
